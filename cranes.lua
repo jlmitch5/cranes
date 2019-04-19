@@ -1,6 +1,6 @@
--- cranes
+-- cranes w grid integration
 -- dual looper / delay
--- v2.0.1 @dan_derks
+-- v0.1 @jlmitch5, built on top of cranes by @dan_derks
 -- https://llllllll.co/t/21207
 -- ---------------------
 -- to start:
@@ -25,15 +25,22 @@
 -- head to params to find
 -- speed, vol, pan
 -- \\\\
+--
+-- grid control:
+-- 1st col = tap to set focused
+--           buffer.  tap again
+--           to toggle overdub
+-- rest    = hold two points
+--           in the same half
+--           of the screen to
+--           set start/end of
+--           the buffer
 
 -- counting ms between key 2 taps
 -- sets loop length
 function count()
   rec_time = rec_time + 0.01
 end
-
--- track recording state
-rec = 0
 
 function init()
   softcut.buffer_clear()
@@ -109,14 +116,13 @@ function init()
   KEY3_hold = false
   KEY1_hold = false
   KEY1_press = 0
-  local edit_mode = 2
   poll_position_1 = 0
   poll_position_2 = 0
-  flying = 0
   clear_all()
+  redraw()
 end
 
-phase = function(n, x)
+function phase(n, x)
   if n == 1 then
     poll_position_1 = x
   elseif n == 2 then
@@ -218,14 +224,18 @@ function clear_all()
   rec = 0
   crane_redraw = 0
   crane2_redraw = 0
+  overdubBuf1Active = false
+  overdubBuf2Active = false
+  mainRecordActive = false
   c2 = math.random(4,15)
   restore_speed()
-  redraw()
   KEY3_hold = false
   softcut.position(1, 0)
   softcut.position(2, 0)
   softcut.enable(1,0)
   softcut.enable(2,0)
+  bufferFocus = 1
+  redraw()
 end
 
 -- variable dump
@@ -241,9 +251,41 @@ over = 0
 clear = 1
 ray = 0.0
 KEY3 = 0
-crane_redraw = 0
-crane2_redraw = 0
+overdubBuf1Active = false
+overdubBuf2Active = false
+bufferFocus = 1
 c2 = math.random(4,12)
+rec = 0
+g = grid.connect()
+
+function overdubStart(buf)
+  softcut.rec_level(buf,1)
+  softcut.pre_level(buf,math.abs(over-1))
+  if buf == 1 then
+    overdubBuf1Active = true
+  else
+    overdubBuf2Active = true
+  end
+  redraw()
+end
+
+function overdubEnd(buf)
+  softcut.rec_level(buf,0)
+  softcut.pre_level(buf,1)
+  if buf == 1 then
+    overdubBuf1Active = false
+  else
+    overdubBuf2Active = false
+  end
+  redraw()
+end
+
+function focusBuffer(buf)
+  rec = 0
+  overdubEnd(buf % 2 + 1)
+  bufferFocus = buf
+  redraw()
+end
 
 -- key hardware interaction
 function key(n,z)
@@ -265,7 +307,7 @@ function key(n,z)
           softcut.rec(2,1)
           softcut.level(1,0)
           softcut.level(2,0)
-          crane_redraw = 1
+          mainRecordActive = true
           redraw()
           counter:start()
         -- if the buffer is clear and key 2 is pressed again:
@@ -279,7 +321,8 @@ function key(n,z)
           counter:stop()
           softcut.poll_start_phase()
           end_point_1 = rec_time
-          softcut.loop_end(1,end_point_1)
+          softcut.loop_start(1,0)
+          softcut.loop_end(1,util.round(end_point_1))
           -- voice 2's end point needs to adapt to the buffer size to avoid BOOM
             if end_point_1 > 0.5 then
               end_point_2 = end_point_1
@@ -288,10 +331,11 @@ function key(n,z)
             else
               end_point_2 = 0.3 + end_point_1
             end
-          softcut.loop_end(2,end_point_2)
+          softcut.loop_end(2,util.round(end_point_2))
           softcut.loop_start(2,0)
           start_point_2 = 0
           crane_redraw = 0
+          mainRecordActive = false
           redraw()
           rec_time = 0
           softcut.level(1,1)
@@ -301,32 +345,16 @@ function key(n,z)
         end
         -- if the buffer is NOT clear and key 2 is pressed:
         -- overwrite/overdub behavior will enable
-        if rec % 2 == 1 and clear == 0 and KEY1_press % 2 == 0 then
-          softcut.rec_level(1,1)
-          softcut.pre_level(1,math.abs(over-1))
-          crane_redraw = 1
-          crane2_redraw = 1
-          redraw()
+        if rec % 2 == 1 and clear == 0 and bufferFocus == 1 then
+          overdubStart(1)
         -- if the buffer is NOT clear and key 2 is pressed again:
         -- overwrite/overdub behavior will disable
-        elseif rec % 2 == 0 and clear == 0 and KEY1_press % 2 == 0 then
-          softcut.rec_level(1,0)
-          softcut.pre_level(1,1)
-          crane_redraw = 0
-          crane2_redraw = 0
-          redraw()
-        elseif rec % 2 == 1 and clear == 0 and KEY1_press % 2 == 1 then
-          softcut.rec_level(2,1)
-          softcut.pre_level(2,math.abs(over-1))
-          crane_redraw = 1
-          crane2_redraw = 1
-          redraw()
-        elseif rec % 2 == 0 and clear == 0 and KEY1_press % 2 == 1 then
-          softcut.rec_level(2,0)
-          softcut.pre_level(2,1)
-          crane_redraw = 0
-          crane2_redraw = 0
-          redraw()
+        elseif rec % 2 == 0 and clear == 0 and bufferFocus == 1 then
+          overdubEnd(1)
+        elseif rec % 2 == 1 and clear == 0 and bufferFocus == 2 then
+          overdubStart(2)
+        elseif rec % 2 == 0 and clear == 0 and bufferFocus == 2 then
+          overdubEnd(2)
         end
   end
 
@@ -356,21 +384,7 @@ function key(n,z)
     KEY1_hold = false
   elseif n == 1 and z == 1 then
     KEY1_press = KEY1_press + 1
-    if KEY1_press % 2 == 1 and rec % 2 == 1 then
-      rec = 0
-      softcut.rec_level(1,0)
-      softcut.pre_level(1,1)
-      crane_redraw = 0
-      crane2_redraw = 0
-      redraw()
-    elseif KEY1_press % 2 == 0 and rec % 2 == 1 then
-      rec = 0
-      softcut.rec_level(2,0)
-      softcut.pre_level(2,1)
-      crane_redraw = 0
-      crane2_redraw = 0
-      redraw()
-    end
+    focusBuffer(bufferFocus % 2 + 1)
     KEY1_hold = true
     redraw()
   elseif n == 1 and z == 0 then
@@ -383,31 +397,27 @@ end
 function enc(n,d)
 
   -- encoder 3: voice 1's loop end point
-  if n == 3 and KEY1_press % 2 == 0 then
+  if n == 3 and bufferFocus == 1 then
     end_point_1 = util.clamp((end_point_1 + d/10),0.0,60.0)
-    --print("voice 1 loop end "..end_point_1)
-    softcut.loop_end(1,end_point_1)
+    softcut.loop_end(1,util.round(end_point_1))
     redraw()
 
   -- encoder 2: voice 1's loop start point
-  elseif n == 2 and KEY1_press % 2 == 0 then
+  elseif n == 2 and bufferFocus == 1 then
     start_point_1 = util.clamp((start_point_1 + d/10),0.0,60.0)
-    --print("voice 1 loop start "..start_point_1)
-    softcut.loop_start(1,start_point_1)
+    softcut.loop_start(1,util.round(start_point_1))
     redraw()
 
 -- encoder 3: voice 2's loop end point
-  elseif n == 3 and KEY1_press % 2 == 1 then
+  elseif n == 3 and bufferFocus == 2 then
     end_point_2 = util.clamp((end_point_2 + d/10),neg_end,60.0)
-    --print("voice 2 loop end "..end_point_2)
-    softcut.loop_end(2,end_point_2)
+    softcut.loop_end(2,util.round(end_point_2))
     redraw()
 
 -- encoder 2: voice 2's loop start point
-  elseif n == 2 and KEY1_press % 2 == 1 then
+  elseif n == 2 and bufferFocus == 2 then
     start_point_2 = util.clamp((start_point_2 + d/10),neg_start,60.0)
-    --print("voice 2 loop start "..start_point_2)
-    softcut.loop_start(2,start_point_2)
+    softcut.loop_start(2,util.round(start_point_2))
     redraw()
 
   -- encoder 1: voice 1's overwrite/overdub amount
@@ -424,30 +434,175 @@ function enc(n,d)
   end
 end
 
+-- grid coordinates to buffer position translation (assumes 128)
+function bufPosToCoor(buf, pos)
+  xPad = 2
+  yPad = buf == 2 and 5 or 1
+  return { x = xPad + pos % 15, y = math.floor(yPad + pos / 15) }
+end
+
+function coorToBufPos(x, y)
+  xPad = 2
+  yPad = y > 4 and 5 or 1
+  buf = y > 4 and 2 or 1
+  return { buf = buf, pos = (x - xPad) % 15 + (y - yPad) * 15 }
+end
+
+-- grid interaction
+local press1buf1 = nil
+local press2buf1 = nil
+local press1buf2 = nil
+local press2buf2 = nil
+local overdubBuf1PressActive = 0
+local overdubBuf2PressActive = 0
+function g.key(x, y, z)
+  if clear == 0 then
+    if x ~= 1 then
+      if z == 1 then
+        local newPress = coorToBufPos(x, y)
+        if newPress.buf == 1 then
+          if press1buf1 == nil then
+            press1buf1 = newPress.pos
+          elseif press2buf1 == nil then
+            press2buf1 = newPress.pos + 1
+            if press1buf1 < press2buf1 then
+              start_point_1 = press1buf1
+              end_point_1 = press2buf1
+            else
+              start_point_1 = press2buf1 - 1
+              end_point_1 = press1buf1 + 1
+            end
+            softcut.loop_start(1,util.round(start_point_1))
+            softcut.loop_end(1,util.round(end_point_1))
+            press1buf1 = nil
+            press2buf1 = nil
+          end
+        else
+          if press1buf2 == nil then
+            press1buf2 = newPress.pos
+          elseif press2buf2 == nil then
+            press2buf2 = newPress.pos + 1
+            if press1buf2 < press2buf2 then
+              start_point_2 = press1buf2
+              end_point_2 = press2buf2
+            else
+              start_point_2 = press2buf2 - 1
+              end_point_2 = press1buf2 + 1
+            end
+            softcut.loop_start(2,util.round(start_point_2))
+            softcut.loop_end(2,util.round(end_point_2))
+            press1buf2 = nil
+            press2buf2 = nil
+          end
+        end
+      else
+        if press1buf1 ~= nil and press2buf1 == nil then
+          press1buf1 = nil
+        elseif press1buf2 ~= nil and press2buf2 == nil then
+          press1buf2 = nil
+        end
+      end
+    else
+      if z == 1 then
+        if y <= 4 then
+          if overdubBuf1PressActive == 0 then
+            if bufferFocus == 1 then
+              if overdubBuf1Active == false then
+                focusBuffer(1)
+                overdubStart(1)
+              else
+                overdubEnd(1)
+              end
+            else
+              focusBuffer(1)
+            end
+          end
+          overdubBuf1PressActive = overdubBuf1PressActive + 1
+        else
+          if overdubBuf2PressActive == 0 then
+            if bufferFocus == 2 then
+              if overdubBuf2Active == false then
+                focusBuffer(2)
+                overdubStart(2)
+              else
+                overdubEnd(2)
+              end
+            else
+              focusBuffer(2)
+            end
+          end
+          overdubBuf2PressActive = overdubBuf2PressActive + 1
+        end
+      else
+        if y <= 4 then
+          overdubBuf1PressActive = overdubBuf1PressActive - 1
+        else
+          overdubBuf2PressActive = overdubBuf2PressActive - 1
+        end
+      end
+    end
+  end
+  redraw()
+end
+
+
+-- displaying stuff on the grid
+function gridredraw()
+  g:all(0)
+  if clear == 0 then
+    -- overdub indicators on col 1
+    for i = 1,4,1 do
+      g:led(1, i, overdubBuf1Active and 10 or bufferFocus == 1 and 5 or 0)
+    end
+    for i = 5,8,1 do
+      g:led(1, i, overdubBuf2Active and 10 or bufferFocus == 2 and 5 or 0)
+    end
+    -- position and start end indicators
+    highlight_coor_1 = bufPosToCoor(1, math.floor(poll_position_1))
+    for i = util.round(start_point_1),util.round(end_point_1) - 1,1 do
+      i_coor = bufPosToCoor(1, i)
+      if (i_coor.x == highlight_coor_1.x and i_coor.y == highlight_coor_1.y) then
+        g:led(i_coor.x, i_coor.y, 15)
+      else
+        g:led(i_coor.x, i_coor.y, 5)
+      end
+    end
+    highlight_coor_2 = bufPosToCoor(2, math.floor(poll_position_2))
+
+    for i = util.round(start_point_2),util.round(end_point_2) - 1,1 do
+      i_coor = bufPosToCoor(2, i)
+      if (i_coor.x == highlight_coor_2.x and i_coor.y == highlight_coor_2.y) then
+        g:led(i_coor.x, i_coor.y, 15)
+      else
+        g:led(i_coor.x, i_coor.y, 5)
+      end
+    end
+  end
+  g:refresh()
+end
+
 -- displaying stuff on the screen
 function redraw()
   screen.clear()
   screen.level(15)
   screen.move(0,50)
-    if KEY1_press % 2 == 1 then
-      screen.text("s2: "..start_point_2)
-    elseif KEY1_press % 2 == 0 then
-      screen.text("s1: "..start_point_1)
+    if bufferFocus == 2 then
+      screen.text("s2: "..util.round(start_point_2))
+    elseif bufferFocus == 1 then
+      screen.text("s1: "..util.round(start_point_1))
     end
   screen.move(0,60)
-    if KEY1_press % 2 == 1 then
-      screen.text("e2: "..math.ceil(end_point_2 * (10^2))/(10^2))
-    elseif KEY1_press % 2 == 0 then
-      screen.text("e1: "..math.ceil(end_point_1 * (10^2))/(10^2))
+    if bufferFocus == 2 then
+      screen.text("e2: "..util.round(end_point_2))
+    elseif bufferFocus == 1 then
+      screen.text("e1: "..util.round(end_point_1))
     end
   screen.move(0,40)
   screen.text("over: "..over)
-  if crane_redraw == 1 then
-    if crane2_redraw == 0 then
-      crane()
-    else
-      crane2()
-    end
+  if mainRecordActive then
+    crane()
+  elseif overdubBuf1Active or overdubBuf2Active then
+    crane2()
   end
   screen.level(3)
   screen.move(0,10)
@@ -455,7 +610,8 @@ function redraw()
   screen.move(0,20)
   screen.text("two: "..math.floor(poll_position_2*10)/10)
   screen.update()
-  end
+  if g then gridredraw() end
+end
 
 -- ALL JUST CRANE DRAWING FROM HERE TO END!
 function crane()
