@@ -122,7 +122,28 @@ function init()
   redraw()
 end
 
+local quantAmount = 20
+quantCount = 0
+
 function phase(n, x)
+  if math.floor(x*100) == math.floor(timeQuantUnit*10) then
+    if buf1ToStart ~= -1 then
+      softcut.loop_start(1, buf1ToStart)
+      buf1ToStart = -1
+    end
+    if buf1ToEnd ~= -1 then
+      softcut.loop_end(1, buf1ToEnd)
+      buf1ToEnd = -1
+    end
+    if buf2ToStart ~= -1 then
+      softcut.loop_start(2, buf2ToStart)
+      buf2ToStart = -1
+    end
+    if buf2ToEnd ~= -1 then
+      softcut.loop_end(2, buf2ToEnd)
+      buf2ToEnd = -1
+    end
+  end
   if n == 1 then
     poll_position_1 = x
   elseif n == 2 then
@@ -215,6 +236,10 @@ function clear_all()
   softcut.loop_end(1,60)
   softcut.loop_start(2,0)
   softcut.loop_end(2,60)
+  buf1ToStart = -1
+  buf1ToEnd = -1
+  buf2ToStart = -1
+  buf2ToEnd = -1
   start_point_1 = 0
   start_point_2 = 0
   end_point_1 = 60
@@ -241,6 +266,10 @@ down_time = 0
 hold_time = 0
 speedlist = {-2.0, -1.0, -0.5, -0.25, 0.25, 0.5, 1.0, 2.0, 4.0}
 speedlist_2 = {-2.0, -1.0, -0.5, -0.25, 0.25, 0.5, 1.0, 2.0, 4.0}
+buf1ToStart = -1
+buf1ToEnd = -1
+buf2ToStart = -1
+buf2ToEnd = -1
 start_point_1 = 0
 start_point_2 = 0
 end_point_1 = 60
@@ -485,8 +514,8 @@ function g.key(x, y, z)
               start_point_1 = press2buf1 - 1
               end_point_1 = press1buf1 + 1
             end
-            softcut.loop_start(1,start_point_1*timeQuantUnit)
-            softcut.loop_end(1,end_point_1*timeQuantUnit)
+            buf1ToStart = start_point_1*timeQuantUnit
+            buf1ToEnd = end_point_1*timeQuantUnit
             press1buf1 = nil
             press2buf1 = nil
           end
@@ -502,8 +531,8 @@ function g.key(x, y, z)
               start_point_2 = press2buf2 - 1
               end_point_2 = press1buf2 + 1
             end
-            softcut.loop_start(2,start_point_2*timeQuantUnit)
-            softcut.loop_end(2,end_point_2*timeQuantUnit)
+            buf2ToStart = start_point_2*timeQuantUnit
+            buf2ToEnd = end_point_2*timeQuantUnit
             press1buf2 = nil
             press2buf2 = nil
           end
