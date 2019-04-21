@@ -222,8 +222,6 @@ function clear_all()
   clear = 1
   rec_time = 0
   rec = 0
-  crane_redraw = 0
-  crane2_redraw = 0
   overdubBuf1Active = false
   overdubBuf2Active = false
   mainRecordActive = false
@@ -251,6 +249,7 @@ over = 0
 clear = 1
 ray = 0.0
 KEY3 = 0
+timeQuantUnit = 0
 overdubBuf1Active = false
 overdubBuf2Active = false
 bufferFocus = 1
@@ -287,6 +286,61 @@ function focusBuffer(buf)
   redraw()
 end
 
+function startLoop()
+  softcut.buffer_clear()
+  softcut.rate_slew_time(1,0.1)
+  softcut.enable(1,1)
+  softcut.enable(2,1)
+  softcut.rate(1,1)
+  softcut.rate(2,1)
+  softcut.play(1,1)
+  softcut.play(2,1)
+  softcut.rec(1,1)
+  softcut.rec(2,1)
+  softcut.level(1,0)
+  softcut.level(2,0)
+  counter:start()
+  mainRecordActive = true
+  redraw()
+end
+
+function setLoop()
+  clear = 0
+  softcut.position(1,0)
+  softcut.position(2,0)
+  softcut.rec_level(1,0)
+  softcut.rec_level(2,0)
+  counter:stop()
+  softcut.poll_start_phase()
+  end_point_1 = rec_time
+  end_point_2 = rec_time
+  rec_time = 0
+  if end_point_1 > 1 then
+    timeQuantUnit = 1 + end_point_1 % 1 / math.floor(end_point_1)
+  else
+    timeQuantUnit = end_point_1
+  end
+  softcut.phase_quant(1,timeQuantUnit/10)
+  softcut.phase_quant(2,timeQuantUnit/10)
+  softcut.event_phase(phase)
+  softcut.loop_start(1,0)
+  softcut.loop_end(1,end_point_1)
+  softcut.loop_start(2,0)
+  softcut.loop_end(2,end_point_2)
+  softcut.level(1,1)
+  softcut.level(2,1)
+  softcut.rate(1,speedlist[params:get("speed_voice_1")])
+  softcut.rate(2,speedlist_2[params:get("speed_voice_2")])
+  mainRecordActive = false
+  redraw()
+  -- -- voice 2's end point needs to adapt to the buffer size to avoid BOOM
+  -- if end_point_1 > 0.5 then
+  --   end_point_2 = end_point_1
+  -- elseif end_point_1 > 0.25 then
+  --   end_point_2 = 0.2 + end_point_1
+  -- end
+end
+
 -- key hardware interaction
 function key(n,z)
   -- KEY 2
@@ -295,53 +349,11 @@ function key(n,z)
         -- if the buffer is clear and key 2 is pressed:
         -- main recording will enable
         if rec % 2 == 1 and clear == 1 then
-          softcut.buffer_clear()
-          softcut.rate_slew_time(1,0.1)
-          softcut.enable(1,1)
-          softcut.enable(2,1)
-          softcut.rate(1,1)
-          softcut.rate(2,1)
-          softcut.play(1,1)
-          softcut.play(2,1)
-          softcut.rec(1,1)
-          softcut.rec(2,1)
-          softcut.level(1,0)
-          softcut.level(2,0)
-          mainRecordActive = true
-          redraw()
-          counter:start()
+          startLoop()
         -- if the buffer is clear and key 2 is pressed again:
         -- main recording will disable, loop points set
         elseif rec % 2 == 0 and clear == 1 then
-          clear = 0
-          softcut.position(1,0)
-          softcut.position(2,0)
-          softcut.rec_level(1,0)
-          softcut.rec_level(2,0)
-          counter:stop()
-          softcut.poll_start_phase()
-          end_point_1 = rec_time
-          softcut.loop_start(1,0)
-          softcut.loop_end(1,util.round(end_point_1))
-          -- voice 2's end point needs to adapt to the buffer size to avoid BOOM
-            if end_point_1 > 0.5 then
-              end_point_2 = end_point_1
-            elseif end_point_1 > 0.25 then
-              end_point_2 = 0.2 + end_point_1
-            else
-              end_point_2 = 0.3 + end_point_1
-            end
-          softcut.loop_end(2,util.round(end_point_2))
-          softcut.loop_start(2,0)
-          start_point_2 = 0
-          crane_redraw = 0
-          mainRecordActive = false
-          redraw()
-          rec_time = 0
-          softcut.level(1,1)
-          softcut.level(2,1)
-          softcut.rate(1,speedlist[params:get("speed_voice_1")])
-          softcut.rate(2,speedlist_2[params:get("speed_voice_2")])
+          setLoop()
         end
         -- if the buffer is NOT clear and key 2 is pressed:
         -- overwrite/overdub behavior will enable
@@ -399,25 +411,25 @@ function enc(n,d)
   -- encoder 3: voice 1's loop end point
   if n == 3 and bufferFocus == 1 then
     end_point_1 = util.clamp((end_point_1 + d/10),0.0,60.0)
-    softcut.loop_end(1,util.round(end_point_1))
+    softcut.loop_end(1,end_point_1)
     redraw()
 
   -- encoder 2: voice 1's loop start point
   elseif n == 2 and bufferFocus == 1 then
     start_point_1 = util.clamp((start_point_1 + d/10),0.0,60.0)
-    softcut.loop_start(1,util.round(start_point_1))
+    softcut.loop_start(1,start_point_1)
     redraw()
 
 -- encoder 3: voice 2's loop end point
   elseif n == 3 and bufferFocus == 2 then
     end_point_2 = util.clamp((end_point_2 + d/10),neg_end,60.0)
-    softcut.loop_end(2,util.round(end_point_2))
+    softcut.loop_end(2,end_point_2)
     redraw()
 
 -- encoder 2: voice 2's loop start point
   elseif n == 2 and bufferFocus == 2 then
     start_point_2 = util.clamp((start_point_2 + d/10),neg_start,60.0)
-    softcut.loop_start(2,util.round(start_point_2))
+    softcut.loop_start(2,start_point_2)
     redraw()
 
   -- encoder 1: voice 1's overwrite/overdub amount
@@ -438,7 +450,7 @@ end
 function bufPosToCoor(buf, pos)
   xPad = 2
   yPad = buf == 2 and 5 or 1
-  return { x = xPad + pos % 15, y = math.floor(yPad + pos / 15) }
+  return { x = xPad + math.floor(pos) % 15, y = math.floor(yPad + math.floor(pos) / 15) }
 end
 
 function coorToBufPos(x, y)
@@ -455,6 +467,7 @@ local press1buf2 = nil
 local press2buf2 = nil
 local overdubBuf1PressActive = 0
 local overdubBuf2PressActive = 0
+
 function g.key(x, y, z)
   if clear == 0 then
     if x ~= 1 then
@@ -472,8 +485,8 @@ function g.key(x, y, z)
               start_point_1 = press2buf1 - 1
               end_point_1 = press1buf1 + 1
             end
-            softcut.loop_start(1,util.round(start_point_1))
-            softcut.loop_end(1,util.round(end_point_1))
+            softcut.loop_start(1,start_point_1*timeQuantUnit)
+            softcut.loop_end(1,end_point_1*timeQuantUnit)
             press1buf1 = nil
             press2buf1 = nil
           end
@@ -489,8 +502,8 @@ function g.key(x, y, z)
               start_point_2 = press2buf2 - 1
               end_point_2 = press1buf2 + 1
             end
-            softcut.loop_start(2,util.round(start_point_2))
-            softcut.loop_end(2,util.round(end_point_2))
+            softcut.loop_start(2,start_point_2*timeQuantUnit)
+            softcut.loop_end(2,end_point_2*timeQuantUnit)
             press1buf2 = nil
             press2buf2 = nil
           end
@@ -545,7 +558,6 @@ function g.key(x, y, z)
   redraw()
 end
 
-
 -- displaying stuff on the grid
 function gridredraw()
   g:all(0)
@@ -557,9 +569,9 @@ function gridredraw()
     for i = 5,8,1 do
       g:led(1, i, overdubBuf2Active and 10 or bufferFocus == 2 and 5 or 0)
     end
-    -- position and start end indicators
-    highlight_coor_1 = bufPosToCoor(1, math.floor(poll_position_1))
-    for i = util.round(start_point_1),util.round(end_point_1) - 1,1 do
+    -- position and start/end indicators
+    highlight_coor_1 = bufPosToCoor(1, math.floor(poll_position_1/timeQuantUnit + .001))
+    for i = math.floor(start_point_1),math.floor(end_point_1) - 1,1 do
       i_coor = bufPosToCoor(1, i)
       if (i_coor.x == highlight_coor_1.x and i_coor.y == highlight_coor_1.y) then
         g:led(i_coor.x, i_coor.y, 15)
@@ -567,9 +579,8 @@ function gridredraw()
         g:led(i_coor.x, i_coor.y, 5)
       end
     end
-    highlight_coor_2 = bufPosToCoor(2, math.floor(poll_position_2))
-
-    for i = util.round(start_point_2),util.round(end_point_2) - 1,1 do
+    highlight_coor_2 = bufPosToCoor(2, math.floor(poll_position_2/timeQuantUnit + .001))
+    for i = math.floor(start_point_2),math.floor(end_point_2) - 1,1 do
       i_coor = bufPosToCoor(2, i)
       if (i_coor.x == highlight_coor_2.x and i_coor.y == highlight_coor_2.y) then
         g:led(i_coor.x, i_coor.y, 15)
